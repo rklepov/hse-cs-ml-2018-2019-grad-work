@@ -105,4 +105,5 @@ class MarketData(object):
         """ Williams % R
         """
         return [(f'willr{timeperiod}', talib.WILLR(high, low, close, timeperiod))]
+
 # __EOF__

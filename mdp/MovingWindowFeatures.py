@@ -54,4 +54,5 @@ class MovingWindowFeatures(object):
 
         return cls(features=time_series_features, target=target, window=window,
                    forecast_offset=forecast, start_ix=start_ix)
+
 # __EOF__
