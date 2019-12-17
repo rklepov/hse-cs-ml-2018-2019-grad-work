@@ -1,4 +1,4 @@
-# mdp/MarketData.py
+# mdp/marketData.py
 
 import os
 
@@ -6,20 +6,26 @@ import numpy as np
 import pandas_datareader as pdr
 import talib
 
-from . import Utils
+from .timeSeries import TimeSeries
+from .utils import WithProperties
 
 
-class MarketData(object):
+class MarketData(WithProperties):
     """ Загрузка и хранение рыночных данных и индикаторов
     """
 
-    def __init__(self, **kwargs):
-        Utils.set_self_attr(self, __class__, **kwargs)
-        # в качсестве признаков используем логарифмические доходности, а не сами цены
-        self.__feature_names = [k for k in kwargs.keys() if k not in ['instrument', 'timestamps'] + list('ohlc')]
+    def __init__(self, instrument, timestamps, **kwargs):
+        feature_names = [k for k in kwargs.keys()]
+
+        # временные ряды могут иметь разную длину, потому что
+        # при вычислении индикаторов часть начальных значений может быть отброшена
+        tail_slice = slice(-np.amin([len(kwargs[f]) for f in feature_names]), None)
+
+        super().__init__(instrument=instrument, timestamps=timestamps, feature_names=feature_names,
+                         tail_slice=tail_slice, **kwargs)
 
     def __len__(self):
-        return len(self.c)
+        return self.tail_len
 
     def get_close_price_from_log_ret(self, c_slice, log_ret):
         """ Переход от предсказанных логарифмических доходностей к ценам.
@@ -29,121 +35,40 @@ class MarketData(object):
         """
         return self.c[c_slice] * np.exp(log_ret).squeeze()
 
-    @property
-    def feature_names(self):
-        return self.__feature_names
-
-    @property
-    def instrument(self):
-        return self.__instrument
-
-    @property
-    def timestamps(self):
-        return self.__timestamps
-
-    @property
-    def o(self):
-        return self.__o
-
-    @property
-    def o_log_ret(self):
-        return self.__o_log_ret
-
-    @property
-    def h(self):
-        return self.__h
-
-    @property
-    def h_log_ret(self):
-        return self.__h_log_ret
-
-    @property
-    def l(self):
-        return self.__l
-
-    @property
-    def l_log_ret(self):
-        return self.__l_log_ret
-
-    @property
-    def c_log_ret(self):
-        return self.__c_log_ret
-
-    @property
-    def c(self):
-        return self.__c
-
-    @property
-    def v(self):
-        return self.__v
-
-    @property
-    def bband20_lower(self):
-        return self.__bband20_lower
-
-    @property
-    def bband20_middle(self):
-        return self.__bband20_middle
-
-    @property
-    def bband20_upper(self):
-        return self.__bband20_upper
-
-    @property
-    def ema14(self):
-        return self.__ema14
-
-    @property
-    def ema30(self):
-        return self.__ema30
-
-    @property
-    def macd(self):
-        return self.__macd
-
-    @property
-    def macd_signal(self):
-        return self.__macd_signal
-
-    @property
-    def rsi14(self):
-        return self.__rsi14
-
-    @property
-    def willr14(self):
-        return self.__willr14
+    def select_transform(self, selected_features):
+        transformed_features = {k: getattr(self, k).transform(transforms=v) for k, v in selected_features.items()}
+        return MarketData(self.instrument, self.timestamps, **transformed_features)
 
     @classmethod
-    def create_(cls, instrument, df, timestamps, **kwargs):
+    def create_(cls, instrument, timestamps, df, **kwargs):
         """ Обобщённая производящая функция.
 
             Ожидает на входе словарь, в котором ключи 'o', 'h', 'l', 'c', 'v' замаплены
             на соответствующие имена колонок датафрейма df.
         """
-        # [скорректированная] цена закрытия - наш главный признак для вычисления индикаторов
         init_kwargs = {'instrument': instrument, 'timestamps': timestamps}
-        init_kwargs.update({k: df[kwargs[k]].values for k in 'ohlcv'})
-        open_price, high_price, low_price, close_price = [init_kwargs[k] for k in 'ohlc']
+        init_kwargs.update({k: TimeSeries(k, timestamps, df[kwargs[k]].values) for k in 'ohlcv'})
 
-        for k in 'ohlc':
-            # будем работать с логарифмической доходностью
-            init_kwargs[f'{k}_log_ret'] = cls.log_returns(df[kwargs[k]]).values
+        # [скорректированная] цена закрытия - наш главный признак для вычисления индикаторов
+        open_price, high_price, low_price, close_price, volume = [init_kwargs[k].data for k in 'ohlcv']
 
         # добавим индикаторы
         # TODO: динамическая настройка списка индикаторов?
-        #
+
+        def ts_from_indi(indi, timestamps=timestamps):
+            return {k: TimeSeries(name=k, timestamps=timestamps, data=v) for k, v in indi}
+
         # EMA14
+        init_kwargs.update(ts_from_indi(cls.indi_ema(close_price, 14)))
         # EMA30
+        init_kwargs.update(ts_from_indi(cls.indi_ema(close_price, 30)))
         # MACD: быстрая, медленная и сигнальная линии со "стандартными" периодами
         # RSI с периодом 14
         # Bollinger Bands
-        # Williams % R
-        #
-        init_kwargs.update(cls.indi_ema(close_price, 14))
-        init_kwargs.update(cls.indi_ema(close_price, 30))
         for indi in (cls.indi_macd, cls.indi_rsi, cls.indi_bband):
-            init_kwargs.update(indi(close_price))
-        init_kwargs.update(cls.indi_willr(high_price, low_price, close_price))
+            init_kwargs.update(ts_from_indi(indi(close_price)))
+        # Williams % R
+        init_kwargs.update(ts_from_indi(cls.indi_willr(high_price, low_price, close_price)))
 
         return cls(**init_kwargs)
 
@@ -155,7 +80,7 @@ class MarketData(object):
             все 4 скорректированные (adjusted) цены (а не только цену закрытия)
         """
         df = pdr.get_data_tiingo(instrument, api_key=os.environ.get('TIINGO_API_KEY'), *args, **kwargs)
-        return cls.create_(instrument, df, df.index.get_level_values('date').values,
+        return cls.create_(instrument, df.index.get_level_values('date').values, df,
                            **{'o': 'adjOpen', 'h': 'adjHigh', 'l': 'adjLow', 'c': 'adjClose', 'v': 'adjVolume'})
 
     @classmethod
@@ -163,7 +88,7 @@ class MarketData(object):
         """ Загрузка данных через pandas_datareader is https://www.quandl.com
         """
         df = pdr.get_data_quandl(instrument, api_key=os.environ.get('QUANDL_API_KEY'), *args, **kwargs)
-        return cls.create_(instrument, df, df.index.values,
+        return cls.create_(instrument, df.index.values, df,
                            **{'o': 'AdjOpen', 'h': 'AdjHigh', 'l': 'AdjLow', 'c': 'AdjClose', 'v': 'AdjVolume'})
 
     @classmethod
@@ -173,14 +98,8 @@ class MarketData(object):
         """
         df = pdr.get_data_alphavantage(instrument, api_key=os.environ.get('ALPHAVANTAGE_API_KEY'),
                                        function='TIME_SERIES_INTRADAY')
-        return cls.create_(instrument, df, df.index.values,
+        return cls.create_(instrument, df.index.values, df,
                            **{'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close', 'v': 'volume'})
-
-    @staticmethod
-    def log_returns(series):
-        """ Вычисление логарифмических доходностей.
-        """
-        return series.rolling(2).apply(lambda x: np.log(x[1] / x[0]), raw=True)
 
     @staticmethod
     def indi_ema(p, timeperiod):
