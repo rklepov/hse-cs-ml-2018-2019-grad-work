@@ -1,9 +1,9 @@
-# mdp/DataSetGenerator.py
+# mdp/dataSetGenerator.py
 
 import numpy as np
 import tensorflow as tf
 
-from . import Utils
+import mdp.utils as Utils
 
 
 class DatasetGenerator(tf.keras.utils.Sequence):
@@ -11,10 +11,10 @@ class DatasetGenerator(tf.keras.utils.Sequence):
     """
 
     def __init__(self, moving_window, batch_size, start_ix, stop_ix, shuffle, scale):
-        Utils.set_self_attr(self, __class__,
-                            **{'moving_window': moving_window, 'batch_size': batch_size,
-                               'start_ix': start_ix, 'stop_ix': stop_ix,
-                               'shuffle': shuffle, 'scale': scale})
+        Utils.set_self_attrs(self, __class__,
+                             **{'moving_window': moving_window, 'batch_size': batch_size,
+                                'start_ix': start_ix, 'stop_ix': stop_ix,
+                                'shuffle': shuffle, 'scale': scale})
         if not shuffle:
             self.ix_ = np.arange(start_ix, stop_ix)
         self.on_epoch_end()
@@ -36,31 +36,6 @@ class DatasetGenerator(tf.keras.utils.Sequence):
             batch = self.moving_window.scale_features(batch)
 
         return batch, self.get_target(self.moving_window, ix)
-
-    @property
-    def moving_window(self):
-        return self.__moving_window
-
-    @property
-    def batch_size(self):
-        return self.__batch_size
-
-    @property
-    def start_ix(self):
-        return self.__start_ix
-
-    @property
-    def stop_ix(self):
-        return self.__stop_ix
-
-    @property
-    def shuffle(self):
-        return self.__shuffle
-        return self.__shuffle
-
-    @property
-    def scale(self):
-        return self.__scale
 
     def on_epoch_end(self):
         if self.shuffle:
