@@ -21,11 +21,14 @@ class MarketData(WithProperties):
         # при вычислении индикаторов часть начальных значений может быть отброшена
         tail_slice = slice(-np.amin([len(kwargs[f]) for f in feature_names]), None)
 
+        features = {k: v[tail_slice] for k, v in kwargs.items() if k in feature_names}
+        timestamps = timestamps[tail_slice]
+
         super().__init__(instrument=instrument, timestamps=timestamps, feature_names=feature_names,
-                         tail_slice=tail_slice, **kwargs)
+                         **features)
 
     def __len__(self):
-        return self.tail_len
+        return len(self.timestamps)
 
     def get_close_price_from_log_ret(self, c_slice, log_ret):
         """ Переход от предсказанных логарифмических доходностей к ценам.
@@ -37,7 +40,29 @@ class MarketData(WithProperties):
 
     def select_transform(self, selected_features):
         transformed_features = {k: getattr(self, k).transform(transforms=v) for k, v in selected_features.items()}
-        return MarketData(self.instrument, self.timestamps, **transformed_features)
+        return self.__class__(self.instrument, self.timestamps, **transformed_features)
+
+    def train_test_split(self, timestamp, window_size, forecast_offset=1, scaler=None):
+        split_ix = np.amax(np.where(self.timestamps < self.timestamps.dtype.type(timestamp)))
+        train_slice = slice(None, split_ix + 1)
+        test_slice = slice((split_ix + 1) - (window_size + forecast_offset - 1), None)
+
+        train_features = {}
+        test_features = {}
+        for f in self.feature_names:
+            series = getattr(self, f)
+            train_series, test_series = series[train_slice], series[test_slice]
+            if scaler is None:
+                train_features[f] = train_series
+                test_features[f] = test_series
+            else:
+                train_features[f] = train_series.scale(scaler)
+                test_features[f] = test_series.scale(train_features[f].scaler)
+
+        return (
+            self.__class__(self.instrument, self.timestamps[train_slice], **train_features),
+            self.__class__(self.instrument, self.timestamps[test_slice], **test_features)
+        )
 
     @classmethod
     def create_(cls, instrument, timestamps, df, **kwargs):
