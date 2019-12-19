@@ -1,8 +1,8 @@
 # mdp/timeSeries.py
 
 import numpy as np
-import scipy
 import pandas as pd
+import scipy
 
 import mdp.utils as utils
 from .utils import WithProperties
@@ -41,7 +41,16 @@ class TimeSeries(WithProperties):
         return len(self.data)
 
     def __getitem__(self, item):
-        return TimeSeries(self.name, self.timestamps[item],  self.data[item])
+        if type(item) is slice:
+            indices = np.arange(*item.indices(len(self)))
+        elif type(item) is list:
+            indices = np.array(item)
+        else:
+            indices = item
+
+        indices = np.clip(indices, 0, len(self) - 1)
+
+        return self.slice(indices)
 
     def adf_report(self, print_results=False):
         return utils.adf_stationarity_test(self.data, print_results=print_results)
@@ -55,46 +64,14 @@ class TimeSeries(WithProperties):
     def scale(self, scaler):
         return ScaledTimeSeries.create(self, scaler=scaler)
 
-    def split(self, timestamp, window_size, forecast_offset):
-        split_ix = np.amax(np.where(self.timestamps < self.timestamps.dtype.type(timestamp)))
-        return (
-            self.__class__(self.name, self.timestamps[:split_ix + 1], self.data[:split_ix + 1]),
-            self.__class__(self.name, self.timestamps[split_ix - window_size + 1:],
-                           self.data[split_ix - window_size + 1:])
-        )
+    def slice(self, indices):
+        return self.__class__(self.name, self.timestamps[indices], self.data[indices])
 
     @staticmethod
     def fwdfill_nans(arr):
         ix = np.where(~np.isnan(arr), np.arange(len(arr)), 0)
         np.maximum.accumulate(ix, out=ix)
         return arr[ix]
-
-
-class ScaledTimeSeries(TimeSeries):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    def inverse(self):
-        data_unscaled = self.scaler.inverse_transform(self.data.reshape(-1, 1)).squeeze()
-        return TimeSeries(self.name, self.timestamps, data_unscaled)
-
-    @classmethod
-    def create(cls, time_series, scaler):
-        data = time_series.data
-
-        # assuming sklearn api interface
-        if type(scaler) is type:
-            # if passed a type (class) then fit the scaler (train)
-            scaler = scaler()  # using the default constructor
-            scaled_data = scaler.fit_transform(data.reshape(-1, 1)).squeeze()
-        else:
-            # if passed with an instance then use the fitted scaler (test)
-            scaled_data = scaler.transform(data.reshape(-1, 1)).squeeze()
-
-        return cls(**{'name': time_series.name,
-                      'timestamps': time_series.timestamps,
-                      'data': scaled_data,
-                      'scaler': scaler})
 
 
 class TransformedTimeSeries(TimeSeries):
@@ -111,9 +88,20 @@ class TransformedTimeSeries(TimeSeries):
 
         return TimeSeries(self.name, np.concatenate([self.orig_ts_head, self.timestamps]), inverse_data)
 
+    def slice(self, indices):
+        if not ((np.arange(len(indices)) + indices[0]) == indices).all():
+            return super().slice(indices)
+        if len(indices) < len(self):
+            series = self.inverse()
+            delta = len(series) - len(self)
+            indices += delta
+            indices = np.concatenate([indices[:delta] - delta, indices])
+            return self.__class__.create(series[indices], self.transforms)
+        else:
+            return self
+
     @classmethod
     def create(cls, time_series, transforms={}):
-
         data_transformed = time_series.data
         orig_data_heads = []
         for f, a in transforms.items():
@@ -177,5 +165,38 @@ class TransformedTimeSeries(TimeSeries):
     @staticmethod
     def inverse_boxcox(series, lmbda, **kwargs):
         return scipy.special.inv_boxcox(series, lmbda)
+
+
+class ScaledTimeSeries(TimeSeries):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def inverse(self):
+        data_unscaled = self.scaler.inverse_transform(self.data.reshape(-1, 1)).squeeze()
+        return TimeSeries(self.name, self.timestamps, data_unscaled)
+
+    def slice(self, indices):
+        return self.__class__(**{'name': self.name,
+                                 'timestamps': self.timestamps[indices],
+                                 'data': self.data[indices],
+                                 'scaler': self.scaler})
+
+    @classmethod
+    def create(cls, time_series, scaler):
+        data = time_series.data
+
+        # assuming sklearn api interface
+        if type(scaler) is type:
+            # if passed a type (class) then fit the scaler (train)
+            scaler = scaler()  # using the default constructor
+            scaled_data = scaler.fit_transform(data.reshape(-1, 1)).squeeze()
+        else:
+            # if passed with an instance then use the fitted scaler (test)
+            scaled_data = scaler.transform(data.reshape(-1, 1)).squeeze()
+
+        return cls(**{'name': time_series.name,
+                      'timestamps': time_series.timestamps,
+                      'data': scaled_data,
+                      'scaler': scaler})
 
 # __EOF__

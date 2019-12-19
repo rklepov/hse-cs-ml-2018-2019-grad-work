@@ -12,29 +12,31 @@ class PlotDateGapsSkipper(Formatter):
     """ https://matplotlib.org/gallery/ticks_and_spines/date_index_formatter.html?highlight=customizing%20matplotlib
     """
 
-    def __init__(self, dates, unit='M'):
+    def __init__(self, dates, shift=0, unit='M'):
         self.__dates = np.datetime_as_string(dates, unit=unit)
+        self.__shift = shift
 
     def __call__(self, x, pos=0):
-        ix = int(np.round(x))
+        ix = int(np.round(x)) - self.__shift
         if ix >= len(self.__dates) or ix < 0:
             return ''
         return self.__dates[ix]
 
 
-def set_xaxis_timestamps_formatter(ax, timestamps):
-    formatter = PlotDateGapsSkipper(timestamps)
+def set_xaxis_timestamps_formatter(ax, timestamps, **kwargs):
+    formatter = PlotDateGapsSkipper(timestamps, **kwargs)
     ax.xaxis.set_major_formatter(formatter)
 
 
-def plot_timeseries(ax, instrument_name, timeseries, series_title, xlabel, ylabel):
-    def plot_ax(ax, title, x, xlabel, y, ylabel):
-        ax.set_title(title)
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
-        ax.tick_params(axis='x', rotation=0)
-        ax.plot(x, y)
+def plot_ax(ax, title, x, xlabel, y, ylabel, **kwargs):
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.tick_params(axis='x', rotation=0)
+    ax.plot(x, y, **kwargs)
 
+
+def plot_timeseries(ax, instrument_name, timeseries, series_title, xlabel, ylabel):
     set_xaxis_timestamps_formatter(ax, timeseries.timestamps)
     plot_ax(ax, f'{instrument_name} {series_title}',
             np.arange(len(timeseries.timestamps)), f'{xlabel}',
@@ -61,6 +63,18 @@ def plot_transformed_timeseries(instrument_name, timeseries, labels, figsize=(16
                     f'{labels["xlabel_transformed"]}', f'{labels["ylabel_transformed"]}')
 
     fig.tight_layout()
+
+
+def plot_train_val_test_split(instr, train, val, test, feature, window_size, title, xlabel, ylabel, colors='brg',
+                              figsize=(16, 6)):
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    set_xaxis_timestamps_formatter(ax, instr.timestamps, unit='D')
+    ax.plot(np.arange(len(train)), getattr(train, feature).data, c=colors[0], zorder=3)
+    shift = len(train) - window_size
+    ax.plot(shift + np.arange(len(val)), getattr(val, feature).data, c=colors[1], zorder=2)
+    shift += len(val) - window_size
+    plot_ax(ax, f'{instr.instrument} {title}', shift + np.arange(len(test)), xlabel, getattr(test, feature).data,
+            ylabel, c=colors[2], zorder=1)
 
 
 def plot_macd(instrument_data, last_n, figsize=(16, 10)):
