@@ -1,7 +1,7 @@
 # mdp/__init__.py
 
-import mdp.plotHelpers
-import mdp.utils
+import mdp.plotHelpers as plotHelpers
+import mdp.utils as utils
 from .datasetGenerator import RegressionGenerator, ClassificationGenerator, MultitaskGenerator
 from .marketData import MarketData
 from .movingWindowFeatures import MovingWindowFeatures
