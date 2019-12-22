@@ -61,8 +61,11 @@ class TimeSeries(WithProperties):
     def transform(self, transforms={}):
         return TransformedTimeSeries.create(self, transforms=transforms)
 
-    def scale(self, scaler):
-        return ScaledTimeSeries.create(self, scaler=scaler)
+    def scale(self, scaler, **kwargs):
+        return ScaledTimeSeries.create(self, scaler=scaler, **kwargs)
+
+    def unscale(self, series):
+        return series.squeeze()
 
     def slice(self, indices):
         return self.__class__(self.name, self.timestamps[indices], self.data[indices])
@@ -78,7 +81,7 @@ class TransformedTimeSeries(TimeSeries):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def inverse(self):
+    def invert(self):
         inverse_data = self.data
         orig_data_heads = self.orig_data_heads.copy()
         for f, a in reversed(list(self.transforms.items())):
@@ -92,7 +95,7 @@ class TransformedTimeSeries(TimeSeries):
         if not ((np.arange(len(indices)) + indices[0]) == indices).all():
             return super().slice(indices)
         if len(indices) < len(self):
-            series = self.inverse()
+            series = self.invert()
             delta = len(series) - len(self)
             indices += delta
             indices = np.concatenate([indices[:delta] - delta, indices])
@@ -171,8 +174,8 @@ class ScaledTimeSeries(TimeSeries):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def inverse(self):
-        data_unscaled = self.scaler.inverse_transform(self.data.reshape(-1, 1)).squeeze()
+    def invert(self):
+        data_unscaled = self.unscale(self.data)
         return TimeSeries(self.name, self.timestamps, data_unscaled)
 
     def slice(self, indices):
@@ -181,14 +184,17 @@ class ScaledTimeSeries(TimeSeries):
                                  'data': self.data[indices],
                                  'scaler': self.scaler})
 
+    def unscale(self, series):
+        return self.scaler.inverse_transform(series.reshape(-1, 1)).squeeze()
+
     @classmethod
-    def create(cls, time_series, scaler):
+    def create(cls, time_series, scaler, **kwargs):
         data = time_series.data
 
         # assuming sklearn api interface
         if type(scaler) is type:
             # if passed a type (class) then fit the scaler (train)
-            scaler = scaler()  # using the default constructor
+            scaler = scaler(**kwargs)
             scaled_data = scaler.fit_transform(data.reshape(-1, 1)).squeeze()
         else:
             # if passed with an instance then use the fitted scaler (test)
@@ -198,5 +204,11 @@ class ScaledTimeSeries(TimeSeries):
                       'timestamps': time_series.timestamps,
                       'data': scaled_data,
                       'scaler': scaler})
+
+
+def invert_log_ret(price_series, log_ret_series):
+    ratios = np.exp(log_ret_series.data)
+    prices = price_series.data[-(len(log_ret_series) + 1):-1] * ratios
+    return prices
 
 # __EOF__

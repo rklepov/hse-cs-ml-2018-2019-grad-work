@@ -7,13 +7,16 @@ import sklearn
 import tensorflow.keras as keras
 from matplotlib.ticker import Formatter
 
+from .timeSeries import ScaledTimeSeries
+from .timeSeries import invert_log_ret
+
 
 class PlotDateGapsSkipper(Formatter):
     """ https://matplotlib.org/gallery/ticks_and_spines/date_index_formatter.html?highlight=customizing%20matplotlib
     """
 
-    def __init__(self, dates, shift=0, unit='M'):
-        self.__dates = np.datetime_as_string(dates, unit=unit)
+    def __init__(self, dates, datetime_unit, shift=0, **kwargs):
+        self.__dates = np.datetime_as_string(dates, unit=datetime_unit)
         self.__shift = shift
 
     def __call__(self, x, pos=0):
@@ -23,61 +26,61 @@ class PlotDateGapsSkipper(Formatter):
         return self.__dates[ix]
 
 
-def set_xaxis_timestamps_formatter(ax, timestamps, **kwargs):
-    formatter = PlotDateGapsSkipper(timestamps, **kwargs)
+def set_xaxis_timestamps_formatter(ax, timestamps, datetime_unit='M', **kwargs):
+    formatter = PlotDateGapsSkipper(timestamps, datetime_unit, **kwargs)
     ax.xaxis.set_major_formatter(formatter)
 
 
-def plot_ax(ax, title, x, xlabel, y, ylabel, **kwargs):
+def plot_ax(ax, title, x, xlabel, y, ylabel, rotation=0, **kwargs):
     ax.set_title(title)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
-    ax.tick_params(axis='x', rotation=0)
+    ax.tick_params(axis='x', rotation=rotation)
     ax.plot(x, y, **kwargs)
 
 
-def plot_timeseries(ax, instrument_name, timeseries, series_title, xlabel, ylabel):
-    set_xaxis_timestamps_formatter(ax, timeseries.timestamps)
+def plot_timeseries(ax, instrument_name, timeseries, series_title, xlabel, ylabel, datetime_unit='M', **kwargs):
+    set_xaxis_timestamps_formatter(ax, timeseries.timestamps, datetime_unit, **kwargs)
     plot_ax(ax, f'{instrument_name} {series_title}',
             np.arange(len(timeseries.timestamps)), f'{xlabel}',
-            timeseries.data, f'{ylabel}')
+            timeseries.data, f'{ylabel}', **kwargs)
 
 
-def plot_transformed_timeseries(instrument_name, timeseries, labels, figsize=(16, 6)):
+def plot_transformed_timeseries(instrument_name, transformed_timeseries,
+                                title_orig, xlabel_orig, ylabel_orig,
+                                title_transformed, xlabel_transformed, ylabel_transformed,
+                                datetime_unit='M', figsize=(16, 6), **kwargs):
     fig, ax = plt.subplots(1, 2, figsize=figsize)
 
-    def plot_ax(ax, title, x, xlabel, y, ylabel):
-        ax.set_title(title)
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
-        ax.tick_params(axis='x', rotation=0)
-        ax.plot(x, y)
-
-    orig_series = timeseries.inverse()
+    orig_series = transformed_timeseries.invert()
 
     plot_timeseries(ax[0], instrument_name, orig_series,
-                    f'{labels["title_orig"]} / p_value={orig_series.p_value:.5f}',
-                    f'{labels["xlabel_orig"]}', f'{labels["ylabel_orig"]}')
-    plot_timeseries(ax[1], instrument_name, timeseries,
-                    f'{labels["title_transformed"]} / p_value={timeseries.p_value:.5f}',
-                    f'{labels["xlabel_transformed"]}', f'{labels["ylabel_transformed"]}')
+                    f'{title_orig} | ADF p_value={orig_series.p_value:.5f}',
+                    f'{xlabel_orig}', f'{ylabel_orig}',
+                    datetime_unit,
+                    **kwargs)
+    plot_timeseries(ax[1], instrument_name, transformed_timeseries,
+                    f'{title_transformed} | ADF p_value={transformed_timeseries.p_value:.5f}',
+                    f'{xlabel_transformed}', f'{ylabel_transformed}',
+                    datetime_unit,
+                    **kwargs)
 
     fig.tight_layout()
 
 
 def plot_train_val_test_split(instr, train, val, test, feature, window_size, title, xlabel, ylabel, colors='brg',
-                              figsize=(16, 6)):
+                              figsize=(16, 6), datetime_unit='M', **kwargs):
     fig, ax = plt.subplots(1, 1, figsize=figsize)
-    set_xaxis_timestamps_formatter(ax, instr.timestamps, unit='D')
+    set_xaxis_timestamps_formatter(ax, instr.timestamps, datetime_unit)
     ax.plot(np.arange(len(train)), getattr(train, feature).data, c=colors[0], zorder=3)
     shift = len(train) - window_size
     ax.plot(shift + np.arange(len(val)), getattr(val, feature).data, c=colors[1], zorder=2)
     shift += len(val) - window_size
     plot_ax(ax, f'{instr.instrument} {title}', shift + np.arange(len(test)), xlabel, getattr(test, feature).data,
-            ylabel, c=colors[2], zorder=1)
+            ylabel, c=colors[2], zorder=1, **kwargs)
 
 
-def plot_macd(instrument_data, last_n, figsize=(16, 10)):
+def plot_macd(instrument_data, last_n, figsize=(16, 10), datetime_unit='M', **kwargs):
     fig = plt.figure(figsize=figsize)
 
     s = slice(-last_n, None)
@@ -86,7 +89,7 @@ def plot_macd(instrument_data, last_n, figsize=(16, 10)):
     x = np.arange(len(timestamps))
 
     ax = plt.subplot(211)
-    set_xaxis_timestamps_formatter(ax, timestamps)
+    set_xaxis_timestamps_formatter(ax, timestamps, datetime_unit, **kwargs)
     plt.xlabel('Date')
     plt.ylabel('Adjusted close price, USD')
     plt.title(f'{instrument_data.instrument} daily close price')
@@ -94,7 +97,7 @@ def plot_macd(instrument_data, last_n, figsize=(16, 10)):
     plt.plot(x, instrument_data.c[s].data, '.-g', label='MACD')
 
     ax = plt.subplot(212)
-    set_xaxis_timestamps_formatter(ax, timestamps)
+    set_xaxis_timestamps_formatter(ax, timestamps, datetime_unit, **kwargs)
 
     plt.xlabel('Date')
     plt.ylabel('MACD')
@@ -114,43 +117,64 @@ def plot_macd(instrument_data, last_n, figsize=(16, 10)):
     fig.tight_layout()
 
 
-def plot_regr_predictions(instrument_data, pred_log_ret, figsize=(16, 10)):
+def plot_all_features(instrument_data, n_cols=3, figsize=(20, 20), datetime_unit='M', **kwargs):
+    n_rows = (len(instrument_data.feature_names) + 1) // n_cols
+    fig, axs = plt.subplots(n_rows, n_cols, figsize=figsize)
+    fig.suptitle(f'{instrument_data.instrument} ({len(instrument_data.feature_names)} features)')
+    timestamps = instrument_data.timestamps
+    x = np.arange(len(timestamps))
+    formatter = PlotDateGapsSkipper(timestamps, datetime_unit)
+    for i, f in enumerate(instrument_data.feature_names):
+        ax = axs[i // n_cols, i % n_cols]
+        ax.xaxis.set_major_formatter(formatter)
+        plot_ax(ax, f, x=x, xlabel='', y=getattr(instrument_data, f).data, ylabel=f, **kwargs)
+        ax.set_title(f)
+    fig.tight_layout()
+
+
+def plot_regr_predictions(orig_price_series, instr_scaled, pred_log_ret,
+                          figsize=(16, 10), datetime_unit='M'):
+    if isinstance(instr_scaled.c, ScaledTimeSeries):
+        pred_log_ret = instr_scaled.c.unscale(pred_log_ret)
+        true_log_ret = instr_scaled.c.invert().data
+    else:
+        pred_log_ret = pred_log_ret.squeeze()
+        true_log_ret = instr_scaled.c.data
+
     fig, ax = plt.subplots(2, 1, sharex=False, figsize=figsize)
 
-    pred_log_ret = pred_log_ret.squeeze()
-
-    timestamps = instrument_data.timestamps[-len(pred_log_ret):]
+    timestamps = instr_scaled.timestamps[-len(pred_log_ret):]
     x = np.arange(len(timestamps))
-    formatter = PlotDateGapsSkipper(timestamps)
+    formatter = PlotDateGapsSkipper(timestamps, datetime_unit)
 
     ax[0].xaxis.set_major_formatter(formatter)
-    y_true = instrument_data.c_log_ret[-len(pred_log_ret):]
+    y_true = true_log_ret[-len(pred_log_ret):]
     mae = keras.losses.MAE(y_true, pred_log_ret).numpy()
     mse = keras.losses.MSE(y_true, pred_log_ret).numpy()
 
     ax[0].set_xlabel('Date')
     ax[0].set_ylabel('Log return (%)')
-    ax[0].set_title(f'{instrument_data.instrument} daily log return, MSE={mse:.6f}, MAE={mae:.4f}')
+    ax[0].set_title(f'{instr_scaled.instrument} daily log return, MSE={mse:.6f}, MAE={mae:.4f}')
     ax[0].plot(x, y_true, label='Real', zorder=9)
     ax[0].plot(x, pred_log_ret, alpha=0.8, label='Predicted', zorder=10)
     ax[0].legend(loc='best')
 
     ax[1].xaxis.set_major_formatter(formatter)
-    y_true = instrument_data.c[-len(pred_log_ret):]
-    y_pred = instrument_data.get_close_price_from_log_ret(slice(-(len(pred_log_ret) + 1), -1), pred_log_ret)
+    y_true = orig_price_series[-len(pred_log_ret):].data
+    y_pred = invert_log_ret(orig_price_series, pred_log_ret).data
     mae = keras.losses.MAE(y_true, y_pred).numpy()
     mse = keras.losses.MSE(y_true, y_pred).numpy()
 
     ax[1].set_xlabel('Date')
     ax[1].set_ylabel('Close price, USD')
-    ax[1].set_title(f'{instrument_data.instrument} daily close price, MSE={mse:.6f}, MAE={mae:.4f}')
-    ax[1].plot(x, instrument_data.c[-len(pred_log_ret):], label='Real', zorder=9)
+    ax[1].set_title(f'{instr_scaled.instrument} daily close price, MSE={mse:.6f}, MAE={mae:.4f}')
+    ax[1].plot(x, y_true, label='Real', zorder=9)
     ax[1].plot(x, y_pred, alpha=0.8, label='Predicted', zorder=10)
     ax[1].legend(loc='lower right')
 
     ax2 = ax[1].twinx()
     ax2.set_ylabel('Price diff, USD')
-    diff = y_true - y_pred
+    diff = np.round(y_true - y_pred, 12)
     bars = ax2.bar(x, diff, alpha=0.25, label='Difference', zorder=0)
     for bar in np.argwhere(diff > 0).squeeze():
         bars[bar].set_color('g')

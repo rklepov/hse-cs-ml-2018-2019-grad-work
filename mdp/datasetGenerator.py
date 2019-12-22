@@ -3,109 +3,81 @@
 import numpy as np
 import tensorflow as tf
 
-import mdp.utils as Utils
+from .utils import WithProperties
 
 
-class DatasetGenerator(tf.keras.utils.Sequence):
+class DatasetGenerator(WithProperties, tf.keras.utils.Sequence):
     """ Генератор данных для keras.Model.fit_generator
     """
 
-    def __init__(self, moving_window, batch_size, start_ix, stop_ix, shuffle, scale):
-        Utils.set_self_attrs(self, __class__,
-                             **{'moving_window': moving_window, 'batch_size': batch_size,
-                                'start_ix': start_ix, 'stop_ix': stop_ix,
-                                'shuffle': shuffle, 'scale': scale})
+    def __init__(self, moving_window, batch_size, shuffle):
+        super().__init__(cls=__class__,
+                         **{'moving_window': moving_window, 'batch_size': batch_size,
+                            'shuffle': shuffle, 'input_shape': moving_window.features.shape[1:],
+                            'n_samples': len(moving_window)})
         if not shuffle:
-            self.ix_ = np.arange(start_ix, stop_ix)
+            self.ix_ = np.arange(len(moving_window))
         self.on_epoch_end()
 
     def __len__(self):
-        return (self.get_n_samples() // self.batch_size) + (0 < self.get_n_samples() % self.batch_size)
+        return (self.n_samples // self.batch_size) + (0 < self.n_samples % self.batch_size)
 
     def __getitem__(self, batch_ix):
         """ Возвращает batch_size массивов размером (window, n_features)
             (то есть куб).
         """
         batch_offs = batch_ix * self.batch_size
-        batch_size = np.min([self.batch_size, self.get_n_samples() - batch_offs])
+        batch_size = np.min([self.batch_size, self.n_samples - batch_offs])
         ix = self.ix_[batch_offs:batch_offs + batch_size]
         batch = self.moving_window.features[ix]
-
-        if self.scale:
-            # TODO: !допущение!: стандартизация в пределах одного окна временного ряда
-            batch = self.moving_window.scale_features(batch)
-
-        return batch, self.get_target(self.moving_window, ix)
+        return batch, self.get_target(ix)
 
     def on_epoch_end(self):
         if self.shuffle:
-            self.ix_ = self.start_ix + np.random.permutation(self.stop_ix - self.start_ix)
+            self.ix_ = np.random.permutation(self.n_samples)
 
-    def get_input_shape(self):
-        return self.moving_window.features.shape[1:]
-
-    def get_n_samples(self):
-        return len(self.ix_)
-
-    def get_target_value_(self, moving_window, ix):
-        return self.moving_window.target[ix + self.moving_window.window_size - 1 + self.moving_window.forecast_offset]
+    def get_target_value_(self, ix):
+        return self.moving_window.target[ix + (self.moving_window.window_size - 1 + self.moving_window.forecast_offset)]
 
     @classmethod
-    def create_train_test_(cls, moving_window, test_split, batch_size=1, scale=True):
-        """
-            TODO: Исходим из предположения, что исходные данные адекватного размера,
-            поэтому крайние случаи (условия вроде window > len(market_data), batch_size > 0 и т.п.) не проверяются.
-
-            features  -  TimeSeriesFeatures
-        """
-        start_ix = moving_window.start_ix
-        if type(test_split) in (float, np.float):
-            split_ix = int(start_ix + (len(moving_window) - start_ix) * (1 - test_split)) - 1
-        else:
-            timestamps = moving_window.market_data.timestamps
-            split_ix = np.amax(np.where(timestamps < timestamps.dtype.type(test_split)))
-
-        return (
-            cls(moving_window, batch_size, start_ix, split_ix - moving_window.window_size, True, scale),  # train
-            cls(moving_window, batch_size, split_ix - moving_window.window_size,
-                len(moving_window), False, scale)  # test
-        )
+    def create(cls, moving_window, batch_size=1, shuffle=True):
+        return cls(moving_window, batch_size, shuffle)
 
 
 class RegressionGenerator(DatasetGenerator):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
 
-    def get_target(self, moving_window, ix):
-        return self.get_target_value_(moving_window, ix)
+    def get_target(self, ix):
+        return self.get_target_value_(ix)
 
     @classmethod
-    def create_train_test(cls, *args, **kwargs):
-        return super().create_train_test_(*args, **kwargs)
+    def create(cls, *args, **kwargs):
+        return super().create(*args, **kwargs)
 
 
 class ClassificationGenerator(DatasetGenerator):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
 
-    def get_target(self, moving_window, ix):
-        target = self.get_target_value_(moving_window, ix)
-        return moving_window.get_target_direction(target).astype(target.dtype.type)
+    def get_target(self, ix):
+        target = self.get_target_value_(ix)
+        direction = self.get_target_direction(target).astype(target.dtype.type)
+        return direction
 
     @classmethod
-    def create_train_test(cls, *args, **kwargs):
-        return super().create_train_test_(*args, **kwargs)
+    def create(cls, *args, **kwargs):
+        return super().create(*args, **kwargs)
+
+    @staticmethod
+    def get_target_direction(target):
+        return (target > 0).astype(np.int)
 
 
 class MultitaskGenerator(RegressionGenerator, ClassificationGenerator):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
 
-    def get_target(self, moving_window, ix):
-        return [RegressionGenerator.get_target(self, moving_window, ix),
-                ClassificationGenerator.get_target(self, moving_window, ix)]
+    def get_target(self, ix):
+        return [RegressionGenerator.get_target(self, ix),
+                ClassificationGenerator.get_target(self, ix)]
 
     @classmethod
-    def create_train_test(cls, *args, **kwargs):
-        return super().create_train_test_(*args, **kwargs)
+    def create(cls, *args, **kwargs):
+        return super().create(*args, **kwargs)
+
 # __EOF__

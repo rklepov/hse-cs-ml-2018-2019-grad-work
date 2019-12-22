@@ -1,6 +1,9 @@
 # mdp/utils.py
 
 import functools
+import glob
+import os
+import pickle
 
 import pandas as pd
 import statsmodels.tsa.stattools as stattools
@@ -49,6 +52,33 @@ def adf_stationarity_test(time_series, significance_level=0.05, print_results=Fa
         print('Augmented Dickey-Fuller Test Results:')
         print(results)
 
-    return (p_value, stationary)
+    return p_value, stationary
 
     # __EOF__
+
+
+def train_model(model, save_dir, train_gen, test_gen, callbacks, epochs=32, force_train=False, verbose=0):
+    hist_path = os.path.join(save_dir, 'train.history')
+    if os.path.exists(hist_path) and not force_train:
+        with open(hist_path, 'rb') as hist_dump:
+            history = pickle.load(hist_dump)
+        return history
+
+    saved_models = glob.glob(os.path.join(save_dir, '*.hdf5'))
+    if 0 < len(saved_models):
+        for file in saved_models:
+            os.remove(file)
+
+    history = model.fit_generator(
+        generator=train_gen,
+        epochs=epochs,
+        verbose=verbose,
+        validation_data=test_gen,
+        callbacks=callbacks,
+        workers=4,
+        shuffle=False)
+
+    with open(hist_path, 'wb') as hist_dump:
+        pickle.dump(history.history, hist_dump)
+
+    return history.history
