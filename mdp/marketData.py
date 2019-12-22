@@ -42,7 +42,7 @@ class MarketData(WithProperties):
         transformed_features = {k: getattr(self, k).transform(transforms=v) for k, v in selected_features.items()}
         return self.__class__(self.instrument, self.timestamps, **transformed_features)
 
-    def train_test_split(self, timestamp, window_size, forecast_offset=1, scaler=None):
+    def train_test_split(self, timestamp, window_size, forecast_offset=1, scaler=None, scaler_kwargs={}):
         split_ix = np.amax(np.where(self.timestamps < self.timestamps.dtype.type(timestamp)))
         train_slice = slice(None, split_ix + 1)
         test_slice = slice((split_ix + 1) - (window_size + forecast_offset - 1), None)
@@ -56,7 +56,7 @@ class MarketData(WithProperties):
                 train_features[f] = train_series
                 test_features[f] = test_series
             else:
-                train_features[f] = train_series.scale(scaler)
+                train_features[f] = train_series.scale(scaler, **scaler_kwargs)
                 test_features[f] = test_series.scale(train_features[f].scaler)
 
         return (
@@ -94,6 +94,12 @@ class MarketData(WithProperties):
             init_kwargs.update(ts_from_indi(indi(close_price)))
         # Williams % R
         init_kwargs.update(ts_from_indi(cls.indi_willr(high_price, low_price, close_price)))
+        # Stochastic
+        init_kwargs.update(ts_from_indi(cls.indi_stochastic(high_price, low_price, close_price)))
+        # Chaikin A / D Line
+        init_kwargs.update(ts_from_indi(cls.indi_adline(high_price, low_price, close_price, volume)))
+        # Chaikin A / D Oscillator
+        init_kwargs.update(ts_from_indi(cls.indi_adosc(high_price, low_price, close_price, volume)))
 
         return cls(**init_kwargs)
 
@@ -122,8 +128,8 @@ class MarketData(WithProperties):
             У них есть внутридневные (минутные) данные, но только за неделю назад
         """
         df = pdr.get_data_alphavantage(instrument, api_key=os.environ.get('ALPHAVANTAGE_API_KEY'),
-                                       function='TIME_SERIES_INTRADAY')
-        return cls.create_(instrument, df.index.values, df,
+                                       function='TIME_SERIES_INTRADAY', *args, **kwargs)
+        return cls.create_(instrument, df.index.astype('datetime64[ns]').values, df,
                            **{'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close', 'v': 'volume'})
 
     @staticmethod
@@ -157,5 +163,23 @@ class MarketData(WithProperties):
         """ Williams % R
         """
         return [(f'willr{timeperiod}', talib.WILLR(high, low, close, timeperiod))]
+
+    @staticmethod
+    def indi_stochastic(high, low, close):
+        """ Stochastic
+        """
+        return zip([f'stoch{s}' for s in 'kd'], talib.STOCH(high, low, close))
+
+    @staticmethod
+    def indi_adline(high, low, close, volume):
+        """ Chaikin A / D Line
+        """
+        return [('adline', talib.AD(high, low, close, volume.astype(np.float)))]
+
+    @staticmethod
+    def indi_adosc(high, low, close, volume):
+        """ Chaikin A / D Oscillator
+        """
+        return [('adosc', talib.ADOSC(high, low, close, volume.astype(np.float)))]
 
 # __EOF__
