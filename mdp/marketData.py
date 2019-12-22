@@ -4,6 +4,20 @@ import os
 
 import numpy as np
 import pandas_datareader as pdr
+# TA-lib installation
+# Win:
+# https://www.lfd.uci.edu/~gohlke/pythonlibs/#ta-lib
+# pip install TA_Lib‑0.4.17‑cp37‑cp37m‑win_amd64.whl
+# pip install TA-Lib
+#
+# Linux ( + Colab):
+# wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+# tar -xzf ta-lib-0.4.0-src.tar.gz
+# %cd ta-lib
+# ./configure --prefix=/usr
+# make
+# make install
+# pip install TA-lib
 import talib
 
 from .timeSeries import TimeSeries
