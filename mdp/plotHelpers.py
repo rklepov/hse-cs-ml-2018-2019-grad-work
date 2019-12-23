@@ -68,6 +68,22 @@ def plot_transformed_timeseries(instrument_name, transformed_timeseries,
     fig.tight_layout()
 
 
+def plot_transformed_timeseries_unit(instrument, series, orig_display_name, transformed_display_name,
+                                     datetime_unit='M'):
+    xlabel = 'Date' if datetime_unit.isupper() else 'Time'
+    plot_transformed_timeseries(
+        instrument.instrument,
+        series,
+        title_orig=orig_display_name,
+        xlabel_orig=xlabel,
+        ylabel_orig=orig_display_name,
+        title_transformed=transformed_display_name,
+        xlabel_transformed=xlabel,
+        ylabel_transformed=transformed_display_name,
+        datetime_unit=datetime_unit
+    )
+
+
 def plot_train_val_test_split(instr, train, val, test, feature, window_size, title, xlabel, ylabel, colors='brg',
                               figsize=(16, 6), datetime_unit='M', **kwargs):
     fig, ax = plt.subplots(1, 1, figsize=figsize)
