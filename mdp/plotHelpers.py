@@ -185,6 +185,42 @@ def plot_regr_predictions(orig_price_series, instr_scaled, pred_log_ret,
     fig.tight_layout()
 
 
+def plot_fbprohet_spread(orig_price, instr_data, prophet_df, figsize=(16, 10)):
+    fig, ax = plt.subplots(2, 1, sharex=False, figsize=figsize)
+
+    def plot_spread(ax, x, y_true, yhat, yhat_upper, yhat_lower, title, xlabel, ylabel):
+        ax.plot(x, y_true)
+        ax.plot(x, yhat)
+        ax.plot(x, yhat_upper, color='y', alpha=0.3)
+        ax.plot(x, yhat_lower, color='y', alpha=0.3)
+        ax.fill_between(x, yhat_lower, yhat_upper, color='y', alpha=0.2)
+        ax.set_title(title)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+
+    x = instr_data.timestamps[-len(prophet_df):]
+
+    y_true = instr_data.c.data[-len(x):]
+    yhat = prophet_df['yhat'].values
+    yhat_upper = prophet_df['yhat_upper'].values
+    yhat_lower = prophet_df['yhat_lower'].values
+
+    plot_spread(ax[0], x, y_true, yhat, yhat_upper, yhat_lower,
+                f'{instr_data.instrument} daily log return',
+                'Date', 'Log return (%)')
+
+    y_true = orig_price[-len(x):].data
+    yhat = invert_log_ret(orig_price, yhat).data
+    yhat_upper = invert_log_ret(orig_price, yhat_upper).data
+    yhat_lower = invert_log_ret(orig_price, yhat_lower).data
+
+    plot_spread(ax[1], x, y_true, yhat, yhat_upper, yhat_lower,
+                f'{instr_data.instrument} daily close price',
+                'Date', 'Close price, USD')
+
+    fig.tight_layout()
+
+
 #
 # ROC / PR curves (+ AUC)
 #
