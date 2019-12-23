@@ -80,7 +80,7 @@ def plot_train_val_test_split(instr, train, val, test, feature, window_size, tit
             ylabel, c=colors[2], zorder=1, **kwargs)
 
 
-def plot_macd(instrument_data, last_n, figsize=(16, 10), datetime_unit='M', **kwargs):
+def plot_macd(instrument_data, last_n, figsize=(16, 10), xlabel='Date', datetime_unit='M', **kwargs):
     fig = plt.figure(figsize=figsize)
 
     s = slice(-last_n, None)
@@ -90,16 +90,16 @@ def plot_macd(instrument_data, last_n, figsize=(16, 10), datetime_unit='M', **kw
 
     ax = plt.subplot(211)
     set_xaxis_timestamps_formatter(ax, timestamps, datetime_unit, **kwargs)
-    plt.xlabel('Date')
+    plt.xlabel(xlabel)
     plt.ylabel('Adjusted close price, USD')
-    plt.title(f'{instrument_data.instrument} daily close price')
+    plt.title(f'{instrument_data.instrument} close price')
 
     plt.plot(x, instrument_data.c[s].data, '.-g', label='MACD')
 
     ax = plt.subplot(212)
     set_xaxis_timestamps_formatter(ax, timestamps, datetime_unit, **kwargs)
 
-    plt.xlabel('Date')
+    plt.xlabel(xlabel)
     plt.ylabel('MACD')
     plt.plot(x, instrument_data.macd[s].data, label='MACD')
     plt.plot(x, instrument_data.macd_signal[s].data, linestyle='dashed', label='Signal')
@@ -133,7 +133,7 @@ def plot_all_features(instrument_data, n_cols=3, figsize=(20, 20), datetime_unit
 
 
 def plot_regr_predictions(orig_price_series, instr_scaled, pred_log_ret,
-                          figsize=(16, 10), datetime_unit='M'):
+                          figsize=(16, 10), xlabel='Date', datetime_unit='M'):
     if isinstance(instr_scaled.c, ScaledTimeSeries):
         pred_log_ret = instr_scaled.c.unscale(pred_log_ret)
         true_log_ret = instr_scaled.c.invert().data
@@ -152,9 +152,9 @@ def plot_regr_predictions(orig_price_series, instr_scaled, pred_log_ret,
     mae = keras.losses.MAE(y_true, pred_log_ret).numpy()
     mse = keras.losses.MSE(y_true, pred_log_ret).numpy()
 
-    ax[0].set_xlabel('Date')
+    ax[0].set_xlabel(xlabel)
     ax[0].set_ylabel('Log return (%)')
-    ax[0].set_title(f'{instr_scaled.instrument} daily log return, MSE={mse:.6f}, MAE={mae:.4f}')
+    ax[0].set_title(f'{instr_scaled.instrument} log return, MSE={mse:.6f}, MAE={mae:.4f}')
     ax[0].plot(x, y_true, label='Real', zorder=9)
     ax[0].plot(x, pred_log_ret, alpha=0.8, label='Predicted', zorder=10)
     ax[0].legend(loc='best')
@@ -165,9 +165,9 @@ def plot_regr_predictions(orig_price_series, instr_scaled, pred_log_ret,
     mae = keras.losses.MAE(y_true, y_pred).numpy()
     mse = keras.losses.MSE(y_true, y_pred).numpy()
 
-    ax[1].set_xlabel('Date')
+    ax[1].set_xlabel(xlabel)
     ax[1].set_ylabel('Close price, USD')
-    ax[1].set_title(f'{instr_scaled.instrument} daily close price, MSE={mse:.6f}, MAE={mae:.4f}')
+    ax[1].set_title(f'{instr_scaled.instrument} close price, MSE={mse:.6f}, MAE={mae:.4f}')
     ax[1].plot(x, y_true, label='Real', zorder=9)
     ax[1].plot(x, y_pred, alpha=0.8, label='Predicted', zorder=10)
     ax[1].legend(loc='lower right')
