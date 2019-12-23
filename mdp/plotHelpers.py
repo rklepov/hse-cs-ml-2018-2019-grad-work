@@ -85,6 +85,16 @@ def plot_transformed_timeseries_unit(instrument, series, orig_display_name, tran
     )
 
 
+def plot_train_test_split(instr, train, test, feature, window_size, title, xlabel, ylabel, colors='bg',
+                          figsize=(16, 6), datetime_unit='M', **kwargs):
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    set_xaxis_timestamps_formatter(ax, instr.timestamps, datetime_unit)
+    ax.plot(np.arange(len(train)), getattr(train, feature).data, c=colors[0], zorder=2)
+    shift = len(train) - window_size
+    plot_ax(ax, f'{instr.instrument} {title}', shift + np.arange(len(test)), xlabel, getattr(test, feature).data,
+            ylabel, c=colors[1], zorder=1, **kwargs)
+
+
 def plot_train_val_test_split(instr, train, val, test, feature, window_size, title, xlabel, ylabel, colors='brg',
                               figsize=(16, 6), datetime_unit='M', **kwargs):
     fig, ax = plt.subplots(1, 1, figsize=figsize)
