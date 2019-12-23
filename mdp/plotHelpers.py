@@ -69,7 +69,7 @@ def plot_transformed_timeseries(instrument_name, transformed_timeseries,
 
 
 def plot_transformed_timeseries_unit(instrument, series, orig_display_name, transformed_display_name,
-                                     datetime_unit='M'):
+                                     datetime_unit='M', **kwargs):
     xlabel = 'Date' if datetime_unit.isupper() else 'Time'
     plot_transformed_timeseries(
         instrument.instrument,
@@ -80,7 +80,8 @@ def plot_transformed_timeseries_unit(instrument, series, orig_display_name, tran
         title_transformed=transformed_display_name,
         xlabel_transformed=xlabel,
         ylabel_transformed=transformed_display_name,
-        datetime_unit=datetime_unit
+        datetime_unit=datetime_unit,
+        **kwargs
     )
 
 
