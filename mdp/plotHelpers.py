@@ -152,10 +152,10 @@ def plot_all_features(instrument_data, n_cols=3, figsize=(20, 20), datetime_unit
     x = np.arange(len(timestamps))
     formatter = PlotDateGapsSkipper(timestamps, datetime_unit)
     for i, f in enumerate(instrument_data.feature_names):
-        ax = axs[i // n_cols, i % n_cols]
+        axi = (i // n_cols, i % n_cols) if 1 < len(axs.shape) else i % n_cols
+        ax = axs[axi]
         ax.xaxis.set_major_formatter(formatter)
         plot_ax(ax, f, x=x, xlabel='', y=getattr(instrument_data, f).data, ylabel=f, **kwargs)
-        ax.set_title(f)
     fig.tight_layout()
 
 
