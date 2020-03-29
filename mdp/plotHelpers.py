@@ -160,7 +160,8 @@ def plot_all_features(instrument_data, n_cols=3, figsize=(20, 20), datetime_unit
 
 
 def plot_regr_predictions(orig_price_series, instr_scaled, pred_log_ret,
-                          figsize=(16, 10), xlabel='Date', datetime_unit='M'):
+                          figsize=(16, 10), xlabel='Date',
+                          datetime_unit='M', plot_data_slice=slice(None)):
     if isinstance(instr_scaled.c, ScaledTimeSeries):
         pred_log_ret = instr_scaled.c.unscale(pred_log_ret)
         true_log_ret = instr_scaled.c.invert().data
@@ -171,30 +172,31 @@ def plot_regr_predictions(orig_price_series, instr_scaled, pred_log_ret,
     fig, ax = plt.subplots(2, 1, sharex=False, figsize=figsize)
 
     timestamps = instr_scaled.timestamps[-len(pred_log_ret):]
-    x = np.arange(len(timestamps))
-    formatter = PlotDateGapsSkipper(timestamps, datetime_unit)
+    x = np.arange(len(timestamps))[plot_data_slice]
+    formatter = PlotDateGapsSkipper(timestamps[plot_data_slice], datetime_unit)
 
     ax[0].xaxis.set_major_formatter(formatter)
-    y_true = true_log_ret[-len(pred_log_ret):]
-    mae = keras.losses.MAE(y_true, pred_log_ret).numpy()
-    mse = keras.losses.MSE(y_true, pred_log_ret).numpy()
+    y_true = true_log_ret[-len(pred_log_ret):][plot_data_slice]
+    y_pred = pred_log_ret[plot_data_slice]
+    mae = keras.losses.MAE(y_true, y_pred).numpy()
+    mse = keras.losses.MSE(y_true, y_pred).numpy()
 
     ax[0].set_xlabel(xlabel)
     ax[0].set_ylabel('Log return (%)')
-    ax[0].set_title(f'{instr_scaled.instrument} log return, MSE={mse:.6f}, MAE={mae:.4f}')
+    ax[0].set_title(f'{instr_scaled.instrument} log return, MSE(x100k)={100000 * mse:.6f}, MAE(x1k)={1000 * mae:.4f}')
     ax[0].plot(x, y_true, label='Real', zorder=9)
-    ax[0].plot(x, pred_log_ret, alpha=0.8, label='Predicted', zorder=10)
+    ax[0].plot(x, y_pred, alpha=0.8, label='Predicted', zorder=10)
     ax[0].legend(loc='best')
 
     ax[1].xaxis.set_major_formatter(formatter)
-    y_true = orig_price_series[-len(pred_log_ret):].data
-    y_pred = invert_log_ret(orig_price_series, pred_log_ret).data
+    y_true = orig_price_series[-len(pred_log_ret):].data[plot_data_slice]
+    y_pred = invert_log_ret(orig_price_series, pred_log_ret).data[plot_data_slice]
     mae = keras.losses.MAE(y_true, y_pred).numpy()
     mse = keras.losses.MSE(y_true, y_pred).numpy()
 
     ax[1].set_xlabel(xlabel)
     ax[1].set_ylabel('Close price, USD')
-    ax[1].set_title(f'{instr_scaled.instrument} close price, MSE={mse:.6f}, MAE={mae:.4f}')
+    ax[1].set_title(f'{instr_scaled.instrument} close price, MSE(x10k)={10000 * mse:.6f}, MAE(x100)={100 * mae:.4f}')
     ax[1].plot(x, y_true, label='Real', zorder=9)
     ax[1].plot(x, y_pred, alpha=0.8, label='Predicted', zorder=10)
     ax[1].legend(loc='lower right')
@@ -212,7 +214,8 @@ def plot_regr_predictions(orig_price_series, instr_scaled, pred_log_ret,
     fig.tight_layout()
 
 
-def plot_fbprohet_spread(orig_price, instr_data, prophet_df, figsize=(16, 10)):
+def plot_fbprohet_spread(orig_price, instr_data, prophet_df, figsize=(16, 10),
+                         datetime_unit='M', plot_data_slice=slice(None)):
     fig, ax = plt.subplots(2, 1, sharex=False, figsize=figsize)
 
     def plot_spread(ax, x, y_true, yhat, yhat_upper, yhat_lower, title, xlabel, ylabel):
@@ -225,25 +228,31 @@ def plot_fbprohet_spread(orig_price, instr_data, prophet_df, figsize=(16, 10)):
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
 
-    x = instr_data.timestamps[-len(prophet_df):]
+    xlabel, title_part = ('Date', 'daily ') if datetime_unit.isupper() else ('Time', ' ')
 
-    y_true = instr_data.c.data[-len(x):]
-    yhat = prophet_df['yhat'].values
-    yhat_upper = prophet_df['yhat_upper'].values
-    yhat_lower = prophet_df['yhat_lower'].values
+    timestamps = instr_data.timestamps[-len(prophet_df):]
+    x = np.arange(len(timestamps))[plot_data_slice]
+    formatter = PlotDateGapsSkipper(timestamps[plot_data_slice], datetime_unit)
+
+    ax[0].xaxis.set_major_formatter(formatter)
+    y_true = instr_data.c.data[-len(timestamps):][plot_data_slice]
+    yhat = prophet_df['yhat'].values[plot_data_slice]
+    yhat_upper = prophet_df['yhat_upper'].values[plot_data_slice]
+    yhat_lower = prophet_df['yhat_lower'].values[plot_data_slice]
 
     plot_spread(ax[0], x, y_true, yhat, yhat_upper, yhat_lower,
-                f'{instr_data.instrument} daily log return',
-                'Date', 'Log return (%)')
+                f'{instr_data.instrument} {title_part}log return',
+                xlabel, 'Log return (%)')
 
-    y_true = orig_price[-len(x):].data
+    ax[1].xaxis.set_major_formatter(formatter)
+    y_true = orig_price[-len(timestamps):].data[plot_data_slice]
     yhat = invert_log_ret(orig_price, yhat).data
     yhat_upper = invert_log_ret(orig_price, yhat_upper).data
     yhat_lower = invert_log_ret(orig_price, yhat_lower).data
 
     plot_spread(ax[1], x, y_true, yhat, yhat_upper, yhat_lower,
-                f'{instr_data.instrument} daily close price',
-                'Date', 'Close price, USD')
+                f'{instr_data.instrument} {title_part}close price',
+                xlabel, 'Close price, USD')
 
     fig.tight_layout()
 
