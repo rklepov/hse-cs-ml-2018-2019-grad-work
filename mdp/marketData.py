@@ -146,6 +146,12 @@ class MarketData(WithProperties):
         return cls.create_(instrument, df.index.astype('datetime64[ns]').values, df,
                            **{'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close', 'v': 'volume'})
 
+    @classmethod
+    def create_from_pd_dataframe(cls, instrument, df):
+        """ Загрузка данных из pandas.Dataframe (что, в свою очередь открывает способ загрузки из .csv файла)
+        """
+        return cls.create_(instrument, df.index.values, df, **dict(zip('ohlcv', df.columns)))
+
     @staticmethod
     def indi_ema(p, timeperiod):
         """ EMA
